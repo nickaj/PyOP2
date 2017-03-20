@@ -120,8 +120,23 @@ innercomm_keyval = MPI.Comm.Create_keyval(delete_fn=delcomm_outer)
 # Outer communicator attribute (attaches user comm to inner communicator)
 outercomm_keyval = MPI.Comm.Create_keyval()
 
+# Split (inner) communicator attribute (attaches user comm to split version of inner comm)
+splitcomm_keyval = MPI.Comm.Create_keyval()
+
 # List of internal communicators, must be freed at exit.
 dupped_comms = []
+
+def get_split(comm_query):
+    if comm_query is None:
+        raise ValueError("Cannot query an empty comm")
+    refcount = comm_query.Get_attr(refcount_keyval)
+    if refcount is not None:
+        # This is a PyOP2 communicator
+        ocomm = comm_query.Get_attr(outercomm_keyval)
+        split = ocomm.Get_attr(splitcomm_keyval)
+    else:
+        split = comm.Get_attr(splitcomm_keyval)
+    return split
 
 
 def dup_comm(comm_in=None):
@@ -148,10 +163,16 @@ def dup_comm(comm_in=None):
         # Check if communicator has an embedded PyOP2 comm.
         comm_out = comm_in.Get_attr(innercomm_keyval)
         if comm_out is None:
+            print("Doing Dup")
             # Haven't seen this comm before, duplicate it.
             comm_out = comm_in.Dup()
             comm_in.Set_attr(innercomm_keyval, comm_out)
             comm_out.Set_attr(outercomm_keyval, comm_in)
+            if MPI.Get_version()[0] >=4:
+                print("Splitting Comm")
+                comm_split = comm_out.Split_type(MPI.COMM_TYPE_SHARED)
+                comm_in.Set_attr(splitcomm_keyval, comm_split)
+                comm_split.Set_attr(outercomm_keyval, comm_in)
             # Refcount
             comm_out.Set_attr(refcount_keyval, [1])
             # Remember we need to destroy it.
@@ -161,6 +182,7 @@ def dup_comm(comm_in=None):
             if refcount is None:
                 raise ValueError("Inner comm without a refcount")
             refcount[0] += 1
+            
     return comm_out
 
 
@@ -191,11 +213,17 @@ def free_comm(comm, remove=True):
         ocomm = comm.Get_attr(outercomm_keyval)
         if ocomm is not None:
             icomm = ocomm.Get_attr(innercomm_keyval)
+            scomm = ocomm.Get_attr(splitcomm_keyval)
+            if scomm is None:
+                print("No split.")
+            else:
+                ocomm.Delete_attr(splitcomm_keyval)
             if icomm is None:
                 raise ValueError("Outer comm does not reference inner comm ")
             else:
                 ocomm.Delete_attr(innercomm_keyval)
             del icomm
+            del scomm
         if remove:
             # Only do this if not called from free_comms.
             dupped_comms.remove(comm)

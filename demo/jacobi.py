@@ -138,7 +138,6 @@ p_u = op2.Dat(nodes, data=u, name="p_u")
 p_du = op2.Dat(nodes, data=du, name="p_du")
 
 alpha = op2.Global(1, data=1.0, name="alpha", dtype=fp_type)
-
 beta = op2.Global(1, data=1.0, name="beta", dtype=fp_type)
 
 
@@ -148,7 +147,7 @@ res = op2.Kernel("""void res(%(t)s *A, %(t)s *u, %(t)s *du, const %(t)s *beta){
 
 update = op2.Kernel("""
 void update(%(t)s *r, %(t)s *du, %(t)s *u, %(t)s *u_sum, %(t)s *u_max) {
-  *u += *du + alpha * (*r);
+  *u += *du + 1.00 * (*r);
   *du = %(z)s;
   *u_sum += (*u)*(*u);
   *u_max = *u_max > *u ? *u_max : *u;
